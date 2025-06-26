@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,19 @@ export default function CheckInPage() {
   )
   const [locationPermission, setLocationPermission] = useState<"pending" | "granted" | "denied">("pending")
   const [cameraPermission, setCameraPermission] = useState<"pending" | "granted" | "denied">("pending")
+  const [showCameraPreview, setShowCameraPreview] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  // Clean up stream when preview closes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+    }
+  }, [])
 
   const handleSessionSelect = (sessionId: number) => {
     setSelectedSession(sessionId)
@@ -48,13 +61,32 @@ export default function CheckInPage() {
     }, 2000)
   }
 
-  const handleCameraCapture = () => {
-    setCameraPermission("granted")
-    setCheckInStep("processing")
-    // Simulate face recognition processing
-    setTimeout(() => {
-      setCheckInStep("success")
-    }, 3000)
+  const handleCameraCapture = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      setCameraPermission("granted")
+      setShowCameraPreview(true)
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play()
+      }
+      setTimeout(() => {
+        // Stop camera after 2 seconds
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop())
+          streamRef.current = null
+        }
+        setShowCameraPreview(false)
+        setCheckInStep("processing")
+        setTimeout(() => {
+          setCheckInStep("success")
+        }, 3000)
+      }, 2000)
+    } catch (err) {
+      setCameraPermission("denied")
+      alert("Camera access denied. Please allow camera access to check in.")
+    }
   }
 
   const resetCheckIn = () => {
@@ -172,24 +204,32 @@ export default function CheckInPage() {
             </CardHeader>
             <CardContent className="text-center space-y-4">
               <div className="mx-auto w-64 h-48 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
-                <div className="text-center">
-                  <Camera className="mx-auto h-12 w-12 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Camera preview will appear here</p>
-                </div>
+                {showCameraPreview ? (
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-cover rounded-lg"
+                    autoPlay
+                    playsInline
+                    muted
+                  />
+                ) : (
+                  <div className="text-center">
+                    <Camera className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Camera preview will appear here</p>
+                  </div>
+                )}
               </div>
-
               <div className="space-y-2">
                 <h3 className="font-medium">{selectedSessionData.course}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Make sure your face is clearly visible and well-lit
                 </p>
               </div>
-
               <div className="flex space-x-2 justify-center">
-                <Button variant="outline" onClick={resetCheckIn}>
+                <Button variant="outline" onClick={resetCheckIn} disabled={showCameraPreview}>
                   Cancel
                 </Button>
-                <Button onClick={handleCameraCapture}>
+                <Button onClick={handleCameraCapture} disabled={showCameraPreview}>
                   <Camera className="mr-2 h-4 w-4" />
                   Capture Photo
                 </Button>
